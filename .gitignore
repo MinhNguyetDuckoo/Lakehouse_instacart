@@ -1,0 +1,17 @@
+venv/
+ven4/
+__pycache__/
+*.pyc
+
+# data
+data/
+*.csv
+
+# logs
+logs/
+*.log
+
+# system
+.env
+
+checkpoint/

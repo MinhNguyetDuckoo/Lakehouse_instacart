@@ -1,131 +1,374 @@
+import os
 import streamlit as st
 import pandas as pd
-from pyspark.sql import SparkSession
-from pyspark.ml.recommendation import ALSModel
-from pyspark.sql.functions import col
+import plotly.express as px
 
-# =========================
-# INIT SPARK
-# =========================
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
+from streamlit_autorefresh import st_autorefresh
+
+
+# =========================================================
+# TIMEZONE
+# =========================================================
+
+os.environ["TZ"] = "Asia/Ho_Chi_Minh"
+
+
+# =========================================================
+# PAGE CONFIG
+# =========================================================
+
+st.set_page_config(
+    page_title="Realtime Ecommerce Lakehouse",
+    page_icon="🚀",
+    layout="wide"
+)
+
+st.title("🚀 Realtime Ecommerce Lakehouse Dashboard")
+
+st.markdown("---")
+
+
+# =========================================================
+# AUTO REFRESH
+# =========================================================
+
+st_autorefresh(
+    interval=5000,
+    key="dashboard_refresh"
+)
+
+
+# =========================================================
+# SPARK SESSION
+# =========================================================
+
 @st.cache_resource
-def load_spark():
-    return SparkSession.builder \
-        .appName("StreamlitRecommendation") \
-        .master("local[*]") \
-        .config("spark.driver.memory", "2g") \
+def create_spark_session():
+
+    spark = SparkSession.builder \
+        .appName("Lakehouse Dashboard") \
+        .config(
+            "spark.sql.extensions",
+            "io.delta.sql.DeltaSparkSessionExtension"
+        ) \
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        ) \
+        .config(
+            "spark.jars.packages",
+            "io.delta:delta-spark_2.12:3.1.0"
+        ) \
         .getOrCreate()
 
-spark = load_spark()
+    spark.sparkContext.setLogLevel("ERROR")
 
-# =========================
-# LOAD MODEL
-# =========================
-@st.cache_resource
-def load_model():
-    return ALSModel.load("models/als_model")
+    spark.conf.set(
+        "spark.sql.session.timeZone",
+        "Asia/Ho_Chi_Minh"
+    )
 
-model = load_model()
+    return spark
 
-# =========================
-# LOAD PRODUCT NAME
-# =========================
-@st.cache_data
-def load_products():
-    df = pd.read_csv("data/raw/products.csv")
-    return dict(zip(df.product_id, df.product_name))
 
-product_dict = load_products()
+spark = create_spark_session()
 
-# =========================
-# UI
-# =========================
-st.title("🛒 Instacart Recommendation System")
 
-user_id = st.number_input("Enter User ID:", min_value=1, step=1)
+# =========================================================
+# LOAD DELTA TABLE
+# =========================================================
 
-if st.button("Recommend"):
-
-    # =========================
-    # CREATE USER DF
-    # =========================
-    user_df = spark.createDataFrame([(int(user_id),)], ["user_id"])
-
-    # =========================
-    # USER HISTORY (SILVER)
-    # =========================
-    st.subheader("🛒 User Purchased:")
+def load_delta_table(path):
 
     try:
-        user_history = spark.read.parquet("data/silver") \
-            .filter(col("user_id") == int(user_id)) \
-            .select("product_id") \
-            .distinct() \
-            .limit(10)
 
-        history_list = user_history.collect()
+        df = spark.read.format("delta").load(path)
 
-        if len(history_list) == 0:
-            st.write("❌ No purchase history")
-        else:
-            for h in history_list:
-                name = product_dict.get(h["product_id"], "Unknown")
-                st.write(f"• {name}")
+        # convert timestamp -> string
+        for field in df.schema.fields:
 
-    except Exception as e:
-        st.error("❌ Error loading user history (check Silver layer)")
-        st.text(str(e))
+            if field.dataType.simpleString() == "timestamp":
 
-    # =========================
-    # RECOMMENDATION (ALS)
-    # =========================
-    st.subheader("🎯 Recommended for you:")
+                df = df.withColumn(
+                    field.name,
+                    col(field.name).cast("string")
+                )
 
-    try:
-        recs = model.recommendForUserSubset(user_df, 5)
-        result = recs.collect()
-
-        if len(result) == 0:
-            st.warning("⚠️ User mới → fallback popular products")
-
-            # =========================
-            # POPULAR (GOLD)
-            # =========================
-            popular = spark.read.parquet("data/gold/user") \
-                .orderBy(col("total_items").desc()) \
-                .limit(5)
-
-            popular_list = popular.collect()
-
-            for p in popular_list:
-                st.write(f"🔥 User {p['user_id']} (popular profile)")
-
-        else:
-            rec_list = result[0]["recommendations"]
-
-            rows = []
-            for r in rec_list:
-                if r["rating"] > 0:
-                    name = product_dict.get(r["product_id"], "Unknown")
-                    rows.append((name, round(r["rating"], 3)))
-
-            if len(rows) == 0:
-                st.write("No strong recommendation found")
-            else:
-                df = pd.DataFrame(rows, columns=["Product", "Score"])
-                st.dataframe(df)
+        return df.toPandas()
 
     except Exception as e:
-        st.error("❌ Error during recommendation")
-        st.text(str(e))
 
-# =========================
-# FOOTER (GIẢI THÍCH)
-# =========================
+        st.warning(f"Cannot load table: {path}")
+        st.error(str(e))
+
+        return pd.DataFrame()
+
+
+# =========================================================
+# LOAD GOLD TABLES
+# =========================================================
+
+sales_df = load_delta_table(
+    "data/gold/sales_kpi"
+)
+
+customer_df = load_delta_table(
+    "data/gold/customer_metrics"
+)
+
+review_df = load_delta_table(
+    "data/gold/review_analytics"
+)
+
+inventory_df = load_delta_table(
+    "data/gold/inventory_alert"
+)
+
+traffic_df = load_delta_table(
+    "data/gold/traffic_kpi"
+)
+
+delivery_df = load_delta_table(
+    "data/gold/delivery_kpi"
+)
+
+fraud_df = load_delta_table(
+    "data/gold/fraud_alert"
+)
+
+
+# =========================================================
+# KPI METRICS
+# =========================================================
+
+st.subheader("📊 Business KPIs")
+
+total_revenue = 0
+total_orders = 0
+avg_order_value = 0
+
+if not sales_df.empty:
+
+    if "total_revenue" in sales_df.columns:
+
+        total_revenue = round(
+            sales_df["total_revenue"].sum(),
+            2
+        )
+
+    if "total_orders" in sales_df.columns:
+
+        total_orders = int(
+            sales_df["total_orders"].sum()
+        )
+
+    if "avg_order_value" in sales_df.columns:
+
+        avg_order_value = round(
+            sales_df["avg_order_value"].mean(),
+            2
+        )
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "💰 Total Revenue",
+    f"${total_revenue}"
+)
+
+col2.metric(
+    "📦 Total Orders",
+    total_orders
+)
+
+col3.metric(
+    "🛒 Avg Order Value",
+    f"${avg_order_value}"
+)
+
 st.markdown("---")
-st.markdown("""
-### 🧠 How it works:
-- **Silver layer** → chứa lịch sử mua hàng chi tiết (user_id, product_id)
-- **Gold layer** → chứa dữ liệu tổng hợp phục vụ training
-- Model sử dụng **ALS (Collaborative Filtering)**
-- Gợi ý dựa trên hành vi của các user tương tự
-""")
+
+
+# =========================================================
+# REVENUE ANALYTICS
+# =========================================================
+
+st.subheader("📈 Revenue Analytics")
+
+if not sales_df.empty:
+
+    fig = px.line(
+        sales_df,
+        x="window_start",
+        y="total_revenue",
+        markers=True,
+        title="Revenue Per Window"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("sales_kpi is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# REVIEW ANALYTICS
+# =========================================================
+
+st.subheader("⭐ Review Sentiment")
+
+if not review_df.empty:
+
+    fig2 = px.pie(
+        review_df,
+        names="review_sentiment",
+        values="total_reviews",
+        title="Review Sentiment Distribution"
+    )
+
+    st.plotly_chart(
+        fig2,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("review_analytics is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# INVENTORY MONITORING
+# =========================================================
+
+st.subheader("📦 Inventory Monitoring")
+
+if not inventory_df.empty:
+
+    fig3 = px.pie(
+        inventory_df,
+        names="inventory_status",
+        values="total_products",
+        title="Inventory Status"
+    )
+
+    st.plotly_chart(
+        fig3,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("inventory_alert is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# TRAFFIC ANALYTICS
+# =========================================================
+
+st.subheader("🌐 Traffic Analytics")
+
+if not traffic_df.empty:
+
+    fig4 = px.bar(
+        traffic_df,
+        x="traffic_source",
+        y="total_sessions",
+        title="Traffic Sources"
+    )
+
+    st.plotly_chart(
+        fig4,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("traffic_kpi is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# DELIVERY KPI
+# =========================================================
+
+st.subheader("🚚 Delivery KPI")
+
+if not delivery_df.empty:
+
+    st.dataframe(
+        delivery_df,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("delivery_kpi is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# TOP CUSTOMERS
+# =========================================================
+
+st.subheader("👑 Top Customers")
+
+if not customer_df.empty:
+
+    top_customers = customer_df.sort_values(
+        by="total_orders",
+        ascending=False
+    ).head(10)
+
+    st.dataframe(
+        top_customers,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning("customer_metrics is empty")
+
+st.markdown("---")
+
+
+# =========================================================
+# FRAUD ALERTS
+# =========================================================
+
+st.subheader("🚨 Fraud Alerts")
+
+if not fraud_df.empty:
+
+    st.dataframe(
+        fraud_df,
+        use_container_width=True
+    )
+
+else:
+
+    st.success("No fraud alerts detected")
+
+st.markdown("---")
+
+
+# =========================================================
+# FOOTER
+# =========================================================
+
+st.caption(
+    "Realtime dashboard auto refresh every 5 seconds"
+)

@@ -1,7 +1,0 @@
-v1
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00000-0c484f61-966d-43a4-ae17-a81b315853d2-c000.snappy.parquet","size":3040,"isDir":false,"modificationTime":1777960112645,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00001-b9a0ded5-076a-4cdd-bda3-c7afa1bc125f-c000.snappy.parquet","size":3010,"isDir":false,"modificationTime":1777960112651,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00002-d8844f87-60d4-4039-800d-5f7389651397-c000.snappy.parquet","size":3010,"isDir":false,"modificationTime":1777960112643,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00003-3d24e1bc-eebb-49d5-b732-78ff5b256b02-c000.snappy.parquet","size":3009,"isDir":false,"modificationTime":1777960112645,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00004-ebfc1a58-a9b5-4674-991c-33c58327f325-c000.snappy.parquet","size":2987,"isDir":false,"modificationTime":1777960112643,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///D:/Hoc_hanh/BigData/lakehourse/data/silver/part-00005-144b0e5f-58bc-45e3-b6b9-be7c2835abb7-c000.snappy.parquet","size":2987,"isDir":false,"modificationTime":1777960112645,"blockReplication":1,"blockSize":33554432,"action":"add"}
